@@ -1,13 +1,24 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import dynamic from "next/dynamic"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { Filter, LogIn, CheckCircle, Loader2 } from "lucide-react"
+import { Filter, LogIn, CheckCircle, Loader2, Map } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import type { PwdMapData } from "@/components/pwd-map"
+
+const PwdMap = dynamic(() => import("@/components/pwd-map"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-[420px] rounded-xl bg-muted/30 text-muted-foreground text-sm">
+      Loading map...
+    </div>
+  ),
+})
 import {
   Dialog,
   DialogContent,
@@ -432,6 +443,29 @@ export default function ExploreNeeds() {
               </div>
             </div>
           </div>
+
+          {/* Interactive Leaflet Map */}
+          <Card className="overflow-hidden border shadow-md">
+            <CardContent className="p-0">
+              <div className="flex items-center gap-2 px-5 py-3 border-b bg-muted/40">
+                <Map className="h-4 w-4 text-primary" />
+                <span className="font-semibold text-sm">PwD Distribution Map</span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {filteredNeeds.reduce((s, n) => s + n.count, 0)} total PwDs
+                  {selectedRegion !== "All" && ` · ${selectedRegion}`}
+                </span>
+              </div>
+              <PwdMap
+                data={filteredNeeds.map((n) => ({
+                  region: n.region,
+                  count: n.count,
+                  aid: n.aid,
+                  disability: n.disability,
+                } as PwdMapData))}
+                selectedRegion={selectedRegion}
+              />
+            </CardContent>
+          </Card>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredNeeds.map((need, idx) => (
