@@ -2,6 +2,7 @@ const PwDRequest = require('../models/PwDRequest');
 const User = require('../models/User');
 const Support = require('../models/Support');
 const Notification = require('../models/Notification');
+const mongoose = require('mongoose');
 
 /**
  * Create a new assistive device request
@@ -218,9 +219,29 @@ const uploadDocument = async (req, res, next) => {
   }
 };
 
+/**
+ * Get notifications for current PwD user
+ */
+const getMyNotifications = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const notifications = await Notification.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(20);
+
+    res.json({
+      success: true,
+      data: { notifications },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createRequest,
   getMyRequests,
   confirmDelivery,
   uploadDocument,
+  getMyNotifications,
 };

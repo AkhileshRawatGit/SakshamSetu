@@ -9,6 +9,7 @@ const {
   getPendingVerifications,
   approveVerification,
   rejectVerification,
+  getPwdMapData,
 } = require('../controllers/adminController');
 const { authenticate, authorize } = require('../middleware/auth');
 const { validate, updateRequestStatusSchema } = require('../middleware/validation');
@@ -40,6 +41,9 @@ router.patch('/verifications/:userId/approve', approveVerification);
 
 // Reject verification
 router.patch('/verifications/:userId/reject', rejectVerification);
+
+// Get PwD locations for map
+router.get('/pwd-map', getPwdMapData);
 
 module.exports = router;
 

@@ -1,15 +1,20 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import dynamic from "next/dynamic"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { DashboardHeader } from "@/components/dashboard-header"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Users, FileText, CreditCard, Lock, TrendingUp, CheckCircle2 } from "lucide-react"
+import { Users, FileText, CreditCard, Lock, TrendingUp, CheckCircle2, MapPin } from "lucide-react"
 import Link from "next/link"
 import { apiGet } from "@/lib/api"
 import { getUser } from "@/lib/auth"
 import { Spinner } from "@/components/ui/spinner"
+import type { PwdMapData } from "@/components/pwd-map"
+
+// Dynamically import the map to avoid SSR issues
+const PwdMap = dynamic(() => import("@/components/pwd-map"), { ssr: false })
 
 interface Analytics {
   users: {
@@ -34,17 +39,24 @@ interface Analytics {
     total: number
     revenue: number
   }
+  distribution?: {
+    byRegion?: Array<{ _id: string; count: number }>
+    byDeviceType?: Array<{ _id: string; count: number }>
+  }
 }
 
 export default function AdminDashboard() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(false)
   const [user, setUser] = useState<any>(null)
+  const [mapData, setMapData] = useState<PwdMapData[]>([])
+  const [selectedRegion, setSelectedRegion] = useState("All")
 
   useEffect(() => {
     const currentUser = getUser()
     setUser(currentUser)
     fetchAnalytics()
+    fetchPwdMap()
   }, [])
 
   const fetchAnalytics = async () => {
@@ -61,6 +73,28 @@ export default function AdminDashboard() {
       console.error("Failed to fetch analytics:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchPwdMap = async () => {
+    try {
+      const response = await apiGet<{
+        success: boolean
+        data: { mapData: Array<{ region: string; count: number; verified: number; disability: string; aid: string }>; total: number }
+      }>("/admin/pwd-map")
+      if (response.success && response.data?.mapData) {
+        const pwdMapData: PwdMapData[] = response.data.mapData
+          .filter((r) => r.region && r.region !== "Unknown")
+          .map((r) => ({
+            region: r.region,
+            count: r.count,
+            aid: r.aid || "Assistive Devices",
+            disability: r.disability || "Various",
+          }))
+        setMapData(pwdMapData)
+      }
+    } catch (error: any) {
+      console.error("Failed to fetch PwD map data:", error)
     }
   }
 
@@ -124,6 +158,8 @@ export default function AdminDashboard() {
     )
   }
 
+  const allRegions = ["All", ...mapData.map((d) => d.region)]
+
   return (
     <div className="flex h-screen bg-background">
       <DashboardSidebar role="admin" />
@@ -173,6 +209,66 @@ export default function AdminDashboard() {
               <Button className="w-full bg-orange-600 hover:bg-orange-700">View Analytics</Button>
             </Link>
           </div>
+
+          {/* PwD Map Section */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <CardTitle className="flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-primary" />
+                  PwD Distribution Map
+                </CardTitle>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {allRegions.map((region) => (
+                    <button
+                      key={region}
+                      onClick={() => setSelectedRegion(region)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        selectedRegion === region
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground hover:bg-primary/10"
+                      }`}
+                    >
+                      {region}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                Geographic distribution of PwD requests across India. Click a marker for details.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {mapData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-60 text-muted-foreground gap-3">
+                  <MapPin className="h-12 w-12 opacity-30" />
+                  <p className="text-sm">No region data available yet. Add PwD requests to see the map.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Legend */}
+                  <div className="flex items-center gap-4 mb-3 flex-wrap">
+                    <span className="text-xs text-muted-foreground font-medium">Density:</span>
+                    {[
+                      { color: "#16a34a", label: "Low (< 5)" },
+                      { color: "#eab308", label: "Moderate (5–9)" },
+                      { color: "#f97316", label: "Medium (10–19)" },
+                      { color: "#dc2626", label: "High (20+)" },
+                    ].map((item) => (
+                      <span key={item.label} className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <span
+                          className="inline-block w-3 h-3 rounded-full"
+                          style={{ background: item.color }}
+                        />
+                        {item.label}
+                      </span>
+                    ))}
+                  </div>
+                  <PwdMap data={mapData} selectedRegion={selectedRegion} />
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           {/* System Overview & Recent Activities */}
           <div className="grid md:grid-cols-3 gap-6">

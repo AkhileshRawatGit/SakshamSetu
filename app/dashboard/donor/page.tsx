@@ -1,10 +1,11 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useToast } from "@/hooks/use-toast"
 import {
   Dialog,
@@ -28,8 +29,11 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { TrendingUp, Users, MapPin, Activity, CheckCircle, Zap, Package, Gem, Calendar, Check } from "lucide-react"
+import { apiGet } from "@/lib/api"
+import type { PwdMapData } from "@/components/pwd-map"
 
-const needsData: Array<{ region: string; count: number; disability: string; aid: string }> = []
+// Dynamically import the map to avoid SSR issues
+const PwdMap = dynamic(() => import("@/components/pwd-map"), { ssr: false })
 
 const oneTimePlans: Array<{
   id: string
@@ -53,13 +57,59 @@ const recentActivities: Array<{ id: number; type: string; desc: string; time: st
 
 export default function DonorDashboard() {
   const { toast } = useToast()
-  const [selectedNeed, setSelectedNeed] = useState<(typeof needsData)[0] | null>(null)
+  const [selectedNeed, setSelectedNeed] = useState<{ region: string; count: number; disability: string; aid: string } | null>(null)
   const [showPlanModal, setShowPlanModal] = useState(false)
   const [showAgreement, setShowAgreement] = useState(false)
   const [agreed, setAgreed] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null)
   const [showPaymentAnimation, setShowPaymentAnimation] = useState(false)
   const [accessGranted, setAccessGranted] = useState(false)
+  const [mapData, setMapData] = useState<PwdMapData[]>([])
+  const [selectedRegion, setSelectedRegion] = useState("All")
+  const [mapLoading, setMapLoading] = useState(true)
+
+  useEffect(() => {
+    fetchMapData()
+  }, [])
+
+  const fetchMapData = async () => {
+    setMapLoading(true)
+    try {
+      const response = await apiGet<{
+        success: boolean
+        data: {
+          needs: Record<string, Record<string, { count: number; requests: any[] }>>
+          total: number
+        }
+      }>("/donor/explore")
+
+      if (response.success && response.data?.needs) {
+        const needs = response.data.needs
+        const flat: PwdMapData[] = []
+
+        Object.entries(needs).forEach(([region, deviceMap]) => {
+          if (!region || region === "null" || region === "undefined") return
+          Object.entries(deviceMap).forEach(([deviceType, info]) => {
+            const firstReq = info.requests[0]
+            flat.push({
+              region,
+              count: info.count,
+              aid: deviceType,
+              disability: firstReq?.disabilityType || "Various",
+            })
+          })
+        })
+        setMapData(flat)
+      }
+    } catch (error) {
+      // If no data / not logged in as donor, show empty map gracefully
+      console.error("Failed to fetch explore needs:", error)
+    } finally {
+      setMapLoading(false)
+    }
+  }
+
+  const needsData = mapData.map((d) => ({ region: d.region, count: d.count, disability: d.disability, aid: d.aid }))
 
   const handleSupportClick = (need: (typeof needsData)[0]) => {
     setSelectedNeed(need)
@@ -99,6 +149,8 @@ export default function DonorDashboard() {
       description: `Support request sent for beneficiary ${initials}`,
     })
   }
+
+  const allRegions = ["All", ...Array.from(new Set(mapData.map((d) => d.region)))]
 
   return (
     <div className="flex h-screen bg-background">
@@ -142,13 +194,78 @@ export default function DonorDashboard() {
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Regions Covered</p>
-                    <p className="text-3xl font-bold text-green-600">0</p>
+                    <p className="text-3xl font-bold text-green-600">{new Set(mapData.map((d) => d.region)).size}</p>
                   </div>
                   <MapPin className="h-8 w-8 text-green-600/30" />
                 </div>
               </CardContent>
             </Card>
           </div>
+
+          {/* Interactive Map */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <CardTitle className="flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-primary" />
+                  PwD Needs Map — Explore by Region
+                </CardTitle>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {allRegions.map((region) => (
+                    <button
+                      key={region}
+                      onClick={() => setSelectedRegion(region)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        selectedRegion === region
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground hover:bg-primary/10"
+                      }`}
+                    >
+                      {region}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                Interactive map of PwD needs across India. Click a marker to see aid details.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {mapLoading ? (
+                <div className="flex items-center justify-center h-60 text-muted-foreground gap-3">
+                  <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                  <span className="text-sm">Loading map data...</span>
+                </div>
+              ) : mapData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-60 text-muted-foreground gap-3">
+                  <MapPin className="h-12 w-12 opacity-30" />
+                  <p className="text-sm">No region data available yet.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Legend */}
+                  <div className="flex items-center gap-4 mb-3 flex-wrap">
+                    <span className="text-xs text-muted-foreground font-medium">Density:</span>
+                    {[
+                      { color: "#16a34a", label: "Low (< 5)" },
+                      { color: "#eab308", label: "Moderate (5–9)" },
+                      { color: "#f97316", label: "Medium (10–19)" },
+                      { color: "#dc2626", label: "High (20+)" },
+                    ].map((item) => (
+                      <span key={item.label} className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <span
+                          className="inline-block w-3 h-3 rounded-full"
+                          style={{ background: item.color }}
+                        />
+                        {item.label}
+                      </span>
+                    ))}
+                  </div>
+                  <PwdMap data={mapData} selectedRegion={selectedRegion} />
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="space-y-6">
             <div>

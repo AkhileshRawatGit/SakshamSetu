@@ -5,6 +5,7 @@ const {
   getMyRequests,
   confirmDelivery,
   uploadDocument,
+  getMyNotifications,
 } = require('../controllers/pwdController');
 const { authenticate, authorize } = require('../middleware/auth');
 const { validate, pwdRequestSchema } = require('../middleware/validation');
@@ -25,6 +26,9 @@ router.patch('/request/:id/confirm', confirmDelivery);
 
 // Upload verification document
 router.post('/upload-doc', upload.single('file'), uploadDocument);
+
+// Get my notifications
+router.get('/notifications', getMyNotifications);
 
 module.exports = router;
 

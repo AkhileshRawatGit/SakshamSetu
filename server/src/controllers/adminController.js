@@ -349,6 +349,72 @@ const rejectVerification = async (req, res, next) => {
   }
 };
 
+/**
+ * Get PwD location data for map display
+ * Returns individual PwD users with location, disability, and active request count
+ */
+const getPwdMapData = async (req, res, next) => {
+  try {
+    // Get all active PwD users
+    const pwdUsers = await User.find({ role: 'PwD', isActive: true })
+      .select('name location disabilityType udidVerified consent')
+      .lean();
+
+    // Get pending/approved request counts per user
+    const requestCounts = await PwDRequest.aggregate([
+      { $match: { status: { $in: ['Pending', 'Approved', 'InProgress'] } } },
+      { $group: { _id: '$requestedBy', count: { $sum: 1 }, aidNames: { $addToSet: '$aidName' }, deviceTypes: { $addToSet: '$deviceType' } } },
+    ]);
+
+    const countMap = {};
+    requestCounts.forEach((r) => {
+      countMap[r._id.toString()] = {
+        count: r.count,
+        aids: r.aidNames.slice(0, 3).join(', '),
+        devices: r.deviceTypes.slice(0, 2).join(', '),
+      };
+    });
+
+    // Group by region for map aggregation
+    const regionMap = {};
+    pwdUsers.forEach((u) => {
+      const region = u.location || 'Unknown';
+      if (!regionMap[region]) {
+        regionMap[region] = {
+          region,
+          count: 0,
+          verified: 0,
+          disabilities: new Set(),
+          aids: new Set(),
+        };
+      }
+      regionMap[region].count++;
+      if (u.udidVerified) regionMap[region].verified++;
+      if (u.disabilityType) regionMap[region].disabilities.add(u.disabilityType);
+
+      const reqInfo = countMap[u._id.toString()];
+      if (reqInfo) {
+        reqInfo.aids.split(', ').forEach((a) => regionMap[region].aids.add(a));
+      }
+    });
+
+    const mapData = Object.values(regionMap).map((r) => ({
+      region: r.region,
+      count: r.count,
+      verified: r.verified,
+      disability: Array.from(r.disabilities).join(', ') || 'Various',
+      aid: Array.from(r.aids).join(', ') || 'Assistive Devices',
+    }));
+
+    res.json({
+      success: true,
+      data: { mapData, total: pwdUsers.length },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllUsers,
   approveUDID,
@@ -358,5 +424,6 @@ module.exports = {
   getPendingVerifications,
   approveVerification,
   rejectVerification,
+  getPwdMapData,
 };
 
