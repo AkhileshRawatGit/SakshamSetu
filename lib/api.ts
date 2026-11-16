@@ -1,12 +1,29 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { getAccessToken, clearTokens } from './auth'
 
+const getBaseURL = () => {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    // Local mobile testing on LAN
+    if (hostname.startsWith('192.168.') || hostname.startsWith('10.') || hostname.startsWith('172.')) {
+      return `http://${hostname}:4000/api`;
+    }
+    // Localhost dev
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+    }
+    // Production on Vercel (same-origin /api)
+    return process.env.NEXT_PUBLIC_API_URL || '/api';
+  }
+  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+};
+
 /**
  * Create axios instance with base configuration
  */
 const api: AxiosInstance = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api',
-  timeout: 8000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -19,10 +36,12 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
 }
 
 /**
- * Request interceptor - Add authorization token to requests
+ * Request interceptor - Add authorization token to requests & dynamic host
  */
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    config.baseURL = getBaseURL();
+
     const token = getAccessToken()
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`

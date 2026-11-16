@@ -4,7 +4,16 @@
  * (from the /server directory)
  */
 
-require('dotenv').config({ path: '.env.local' });
+const path = require('path');
+const dns = require('dns');
+const dotenv = require('dotenv');
+
+// Load environment variables from server and root directory (server/.env.local has priority)
+dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
@@ -14,7 +23,7 @@ const Support = require('./models/Support');
 const Payment = require('./models/Payment');
 const Notification = require('./models/Notification');
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+// ─── helpers ─────────────────────────────────────────────────────
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
@@ -34,11 +43,11 @@ const DISABILITY_TYPES = [
 const DEVICE_TYPES = ['Mobility', 'Hearing', 'Vision', 'Communication', 'Cognitive'];
 
 const AIDS = {
-  Mobility:      ['Electric Wheelchair', 'Orthopaedic Walker', 'Prosthetic Limb', 'Crutches'],
-  Hearing:       ['Smart Hearing Aid', 'Cochlear Implant Processor', 'Vibrating Alert Device'],
-  Vision:        ['Smart Walking Stick', 'Braille Display', 'Screen Reader Device', 'Magnifier'],
+  Mobility: ['Electric Wheelchair', 'Orthopaedic Walker', 'Prosthetic Limb', 'Crutches'],
+  Hearing: ['Smart Hearing Aid', 'Cochlear Implant Processor', 'Vibrating Alert Device'],
+  Vision: ['Smart Walking Stick', 'Braille Display', 'Screen Reader Device', 'Magnifier'],
   Communication: ['Communication Board', 'AAC Device', 'Speech Amplifier'],
-  Cognitive:     ['Reminder Watch', 'GPS Tracker Device', 'Smart Medication Dispenser'],
+  Cognitive: ['Reminder Watch', 'GPS Tracker Device', 'Smart Medication Dispenser'],
 };
 
 const PRIORITIES = ['Low', 'Medium', 'High'];
@@ -61,15 +70,29 @@ const DONOR_NAMES = [
 ];
 
 async function main() {
-  const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/sakshamsetu';
+  const MONGO_URI = process.env.MONGO_URI;
   if (!MONGO_URI) {
-    console.error('❌  MONGO_URI is not set in .env.local');
+    console.error('❌  MONGO_URI is not set in .env.local or server/.env.local');
     process.exit(1);
   }
 
+  if (MONGO_URI.includes('<') || MONGO_URI.includes('>')) {
+    console.error('❌  MONGO_URI contains placeholder brackets "<" or ">". Please replace with your actual Atlas password.');
+    process.exit(1);
+  }
+
+  if (MONGO_URI.startsWith('mongodb+srv://')) {
+    try {
+      dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+    } catch { }
+  }
+
   console.log('🔗  Connecting to MongoDB…');
-  await mongoose.connect(MONGO_URI);
-  console.log('✅  Connected.\n');
+  await mongoose.connect(MONGO_URI, {
+    dbName: process.env.MONGO_DB_NAME || 'sakshamsetu',
+    serverSelectionTimeoutMS: 10000,
+  });
+  console.log(`✅  Connected to ${mongoose.connection.host} (DB: ${mongoose.connection.name}).\n`);
 
   // ── clean slate (only for development!) ──────────────────────────────────
   await Promise.all([
